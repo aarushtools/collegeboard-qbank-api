@@ -18,3 +18,11 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+addopts = "-m \"not integration\""
+norecursedirs = [
+    ".pytest_cache",
+    "pytest-cache-files-*",
+]
+markers = [
+    "integration: live CollegeBoard API integration tests (excluded by default; run with `-m integration`)",
+]
