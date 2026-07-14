@@ -1,0 +1,9 @@
+[project]
+name = "collegeboard-qbank-api"
+version = "0.1.0"
+description = "A wrapper for pythonically interacting with CollegeBoard's internal question bank API."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "httpx>=0.28.1",
+]
