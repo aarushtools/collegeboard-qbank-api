@@ -24,7 +24,7 @@ from schemas import (
 class QBankAPIFailure(httpx.HTTPError):
     """All QBank API errors subclass from this class."""
 
-    def __init__(self, message: str, request: httpx.Request):
+    def __init__(self, message: str, request: httpx.Request | None = None):
         super().__init__(message)
         self.request = request
 
@@ -32,7 +32,12 @@ class QBankAPIFailure(httpx.HTTPError):
 class QBankHTTPStatusError(QBankAPIFailure):
     """Raised when the QBank API returns a 4xx or 5xx status code (except for 429, which returns QBankRateLimitedError)."""
 
-    def __init__(self, message: str, request: httpx.Request, response: httpx.Response):
+    def __init__(
+        self,
+        message: str,
+        request: httpx.Request | None,
+        response: httpx.Response,
+    ):
         super().__init__(message, request)
         self.response = response
 
@@ -43,7 +48,7 @@ class QBankRateLimitedError(QBankAPIFailure):
     def __init__(
         self,
         message: str,
-        request: httpx.Request,
+        request: httpx.Request | None,
         response: httpx.Response,
         retry_after: int,
     ):
@@ -80,16 +85,23 @@ class QBankMetadataClient:
             except ValueError, AttributeError:
                 error_detail = exc.response.text or "No error text provided"
             msg = f"QBank API Server Error [{exc.response.status_code}]: {error_detail}"
-            raise QBankHTTPStatusError(msg, response=exc.response) from exc
+            raise QBankHTTPStatusError(
+                msg,
+                request=exc.request,
+                response=exc.response,
+            ) from exc
         except httpx.HTTPError as exc:
-            raise QBankAPIFailure(f"QBank Network/Transport Error: {exc}") from exc
+            raise QBankAPIFailure(
+                f"QBank Network/Transport Error: {exc}",
+                request=exc.request,
+            ) from exc
         except Exception as exc:
             raise QBankAPIFailure(f"Unexpected system error occurred: {exc}") from exc
 
     @property
     def assessments(self) -> list[Assessment]:
         return [
-            Assessment(id=assmnt["id"], name=assmnt["text"])
+            Assessment(id=int(assmnt["id"]), name=assmnt["text"])
             for assmnt in self._raw["lookupData"]["assessment"]
         ]
 
@@ -100,11 +112,11 @@ class QBankMetadataClient:
             module_lookup_name = self.MODULE_SHORTHAND_LOOKUP_TABLE[module["text"]]
             mdl_domains = [
                 Domain(
-                    id=domain["id"],
+                    id=int(domain["id"]),
                     name=domain["text"],
                     code=domain["primaryClassCd"],
                     skills=[
-                        Skill(id=skill["id"], name=skill["text"])
+                        Skill(id=int(skill["id"]), name=skill["text"])
                         for skill in domain["skill"]
                     ],
                 )
@@ -112,7 +124,7 @@ class QBankMetadataClient:
             ]
 
             module_list.append(
-                TestModule(id=module["id"], name=module["text"], domains=mdl_domains)
+                TestModule(id=int(module["id"]), name=module["text"], domains=mdl_domains)
             )
 
         return module_list
@@ -130,6 +142,7 @@ class QBankAssessmentClient:
     """A client to fetch the specific questions for an assessment"""
 
     DEFAULT_QUESTION_URL = "https://qbank-api.collegeboard.org/msreportingquestionbank-prod/questionbank/digital/get-questions"
+    DEFAULT_FETCH_URL = "https://qbank-api.collegeboard.org/msreportingquestionbank-prod/questionbank/digital/get-question"
     DEFAULT_DOWNLOAD_URL = "https://qbank-api.collegeboard.org/msreportingquestionbank-prod/questionbank/pdf-download-v2"
     DEFAULT_TZ = ZoneInfo("America/New_York")
 
@@ -141,6 +154,7 @@ class QBankAssessmentClient:
         *,
         tz: ZoneInfo | None,
         question_url: str = DEFAULT_QUESTION_URL,
+        fetch_url: str = DEFAULT_FETCH_URL,
         download_url: str = DEFAULT_DOWNLOAD_URL,
     ) -> None:
         self.assessment = assessment
@@ -148,6 +162,7 @@ class QBankAssessmentClient:
         self.domains = domains
         self.tz = tz or self.DEFAULT_TZ
         self.question_url = question_url
+        self.fetch_url = fetch_url
         self.download_url = download_url
 
         try:
@@ -170,9 +185,16 @@ class QBankAssessmentClient:
             except ValueError, AttributeError:
                 error_detail = exc.response.text or "No error text provided"
             msg = f"QBank API Server Error [{exc.response.status_code}]: {error_detail}"
-            raise QBankHTTPStatusError(msg, response=exc.response) from exc
+            raise QBankHTTPStatusError(
+                msg,
+                request=exc.request,
+                response=exc.response,
+            ) from exc
         except httpx.HTTPError as exc:
-            raise QBankAPIFailure(f"QBank Network/Transport Error: {exc}") from exc
+            raise QBankAPIFailure(
+                f"QBank Network/Transport Error: {exc}",
+                request=exc.request,
+            ) from exc
         except Exception as exc:
             raise QBankAPIFailure(f"Unexpected system error occurred: {exc}") from exc
 
@@ -188,7 +210,9 @@ class QBankAssessmentClient:
             self.questions = []
             DOMAIN_LOOKUP_TABLE = {d_obj.name: d_obj for d_obj in client.domains}
             SKILL_LOOKUP_TABLE = {
-                skill.name: skill for d_obj in client.domains for skill in d_obj
+                skill.name: skill
+                for d_obj in client.domains
+                for skill in d_obj.skills
             }
 
             for q in client._raw:
@@ -197,7 +221,11 @@ class QBankAssessmentClient:
                         assessment=client.assessment,
                         domain=DOMAIN_LOOKUP_TABLE[q["primary_class_cd_desc"]],
                         skill=SKILL_LOOKUP_TABLE[q["skill_desc"]],
-                        external_id=uuid.UUID(q["external_id"]),
+                        external_id=(
+                            uuid.UUID(q["external_id"])
+                            if q["external_id"] is not None
+                            else None
+                        ),
                         uuid=uuid.UUID(q["uId"]),
                         question_id=q["questionId"],
                         difficulty=q["difficulty"],
@@ -216,6 +244,7 @@ class QBankAssessmentClient:
         def all(self) -> _QuestionCollection:
             return _QuestionCollection(self.questions)
 
+        @staticmethod
         def _get_external_id(q: QuestionSummary | uuid.UUID) -> uuid.UUID:
             if type(q) is QuestionSummary:
                 external_id = q.external_id
@@ -228,12 +257,14 @@ class QBankAssessmentClient:
 
             return external_id
 
+        @staticmethod
         def _process_answer_json(
             raw: dict[str, dict[str, str] | str], question_summary: QuestionSummary
         ):
+            answer_options = raw.get("answerOptions") or []
             answer_list = {
                 answer["id"]: Answer(id=answer["id"], content=answer["content"])
-                for answer in raw["answerOptions"]
+                for answer in answer_options
             }
             correct_answers = []
             for key in raw["keys"]:
@@ -243,9 +274,9 @@ class QBankAssessmentClient:
                     correct_answers.append(Answer(id=None, content=key))
 
             return DetailedQuestion(
-                type=raw["question_type"],
+                type=raw["type"],
                 stem=raw["stem"],
-                stimulus=raw["stimulus"],
+                stimulus=raw.get("stimulus"),
                 rationale=raw["rationale"],
                 question_summary=question_summary,
                 answers=answer_list.values(),
@@ -274,9 +305,13 @@ class QBankAssessmentClient:
                 try:
                     try:
                         response = _client.post(
-                            self.client.question_url,
+                            self.client.fetch_url,
                             json={
-                                "external_id": external_id,
+                                "external_id": (
+                                    str(external_id)
+                                    if external_id is not None
+                                    else None
+                                ),
                             },
                             timeout=2.0,
                         )
@@ -293,13 +328,19 @@ class QBankAssessmentClient:
                         if exc.response.status_code == 429:
                             raise QBankRateLimitedError(
                                 msg,
+                                request=exc.request,
                                 response=exc.response,
                                 retry_after=exc.response.headers.get("Retry-After"),
                             ) from exc
-                        raise QBankHTTPStatusError(msg, response=exc.response) from exc
+                        raise QBankHTTPStatusError(
+                            msg,
+                            request=exc.request,
+                            response=exc.response,
+                        ) from exc
                     except httpx.HTTPError as exc:
                         raise QBankAPIFailure(
-                            f"QBank Network/Transport Error: {exc}"
+                            f"QBank Network/Transport Error: {exc}",
+                            request=exc.request,
                         ) from exc
                     except Exception as exc:
                         raise QBankAPIFailure(
@@ -352,9 +393,13 @@ class QBankAssessmentClient:
                 try:
                     try:
                         response = await client.post(
-                            self.client.question_url,
+                            self.client.fetch_url,
                             json={
-                                "external_id": external_id,
+                                "external_id": (
+                                    str(external_id)
+                                    if external_id is not None
+                                    else None
+                                ),
                             },
                             timeout=2.0,
                         )
@@ -371,13 +416,19 @@ class QBankAssessmentClient:
                         if exc.response.status_code == 429:
                             raise QBankRateLimitedError(
                                 msg,
+                                request=exc.request,
                                 response=exc.response,
                                 retry_after=exc.response.headers.get("Retry-After"),
                             ) from exc
-                        raise QBankHTTPStatusError(msg, response=exc.response) from exc
+                        raise QBankHTTPStatusError(
+                            msg,
+                            request=exc.request,
+                            response=exc.response,
+                        ) from exc
                     except httpx.HTTPError as exc:
                         raise QBankAPIFailure(
-                            f"QBank Network/Transport Error: {exc}"
+                            f"QBank Network/Transport Error: {exc}",
+                            request=exc.request,
                         ) from exc
                     except Exception as exc:
                         raise QBankAPIFailure(
@@ -472,15 +523,19 @@ class QBankAssessmentClient:
                             if exc.response.status_code == 429:
                                 raise QBankRateLimitedError(
                                     msg,
+                                    request=exc.request,
                                     response=exc.response,
                                     retry_after=exc.response.headers.get("Retry-After"),
                                 ) from exc
                             raise QBankHTTPStatusError(
-                                msg, response=exc.response
+                                msg,
+                                request=exc.request,
+                                response=exc.response,
                             ) from exc
                         except httpx.HTTPError as exc:
                             raise QBankAPIFailure(
-                                f"QBank Network/Transport Error: {exc}"
+                                f"QBank Network/Transport Error: {exc}",
+                                request=exc.request,
                             ) from exc
                         except Exception as exc:
                             raise QBankAPIFailure(
@@ -497,6 +552,7 @@ class QBankAssessmentClient:
 
                         elif raw.get("status") == "IN_PROGRESS":
                             yield QBankLiveDownloadResults(
+                                download_url=None,
                                 questions_processed=raw["progress"][
                                     "questionsProcessed"
                                 ],
@@ -514,8 +570,6 @@ class QBankAssessmentClient:
                         await asyncio.sleep(request_speed_interval)
 
                 except QBankRateLimitedError as ex:
-                    if ex.retry_after is None:
-                        raise
                     await asyncio.sleep(float(ex.retry_after))
                     async for item in self.create_pdf_url(question_list, style):
                         yield item

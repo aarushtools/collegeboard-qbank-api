@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 import datetime
 from enum import StrEnum
@@ -13,6 +14,10 @@ class QBankMultipleSkills(ValueError):
     """Returned if multiple skills arised from a simple QBank search"""
 
 
+def _tupleify(items: Iterable):
+    return tuple(items)
+
+
 @dataclass(frozen=True)
 class Assessment:
     id: int
@@ -24,6 +29,9 @@ class TestModule:
     id: int
     name: str
     domains: list[Domain]
+
+    def __post_init__(self):
+        object.__setattr__(self, "domains", _tupleify(self.domains))
 
 
 @dataclass(frozen=True)
@@ -38,6 +46,9 @@ class Domain:
     name: str
     code: str
     skills: list[Skill]
+
+    def __post_init__(self):
+        object.__setattr__(self, "skills", _tupleify(self.skills))
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,16 +75,20 @@ class DetailedQuestion:
     answers: list[Answer]
     correct_answers: list[Answer]
 
+    def __post_init__(self):
+        object.__setattr__(self, "answers", _tupleify(self.answers))
+        object.__setattr__(self, "correct_answers", _tupleify(self.correct_answers))
+
 
 @dataclass(frozen=True)
 class Answer:
     id: uuid.UUID | None
     content: str
 
-
+@dataclass(frozen=True)
 class QBankDownloadProgress:
     status: Literal["COMPLETED", "IN_PROGRESS"]
-    download_url: str
+    download_url: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)
