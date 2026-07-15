@@ -141,7 +141,7 @@ def test_assessment_client_parses_questions_and_counts(monkeypatch):
     client = main.QBankAssessmentClient(
         assessment,
         module,
-        [domain],
+        (domain,),
         tz=dt.timezone.utc,
     )
     manager = client.QuestionManager()
@@ -175,7 +175,7 @@ def test_assessment_client_http_status_errors(monkeypatch, response, match):
         main.QBankAssessmentClient(
             assessment,
             module,
-            [domain],
+            (domain,),
             tz=dt.timezone.utc,
         )
 
@@ -195,7 +195,7 @@ def test_assessment_client_wraps_transport_errors(monkeypatch):
         main.QBankAssessmentClient(
             assessment,
             module,
-            [domain],
+            (domain,),
             tz=dt.timezone.utc,
         )
 
@@ -212,7 +212,7 @@ def test_assessment_client_wraps_unexpected_errors(monkeypatch):
         main.QBankAssessmentClient(
             assessment,
             module,
-            [domain],
+            (domain,),
             tz=dt.timezone.utc,
         )
 
@@ -280,8 +280,8 @@ def test_question_manager_accepts_list_backed_domain_skills(monkeypatch):
         Skill(id=1, name="Linear equations in one variable"),
         Skill(id=2, name="Linear functions"),
     ]
-    domain = Domain(id=1, name="Algebra", code="H", skills=skills)
-    module = SchemaTestModule(id=2, name="Math", domains=[domain])
+    domain = Domain(id=1, name="Algebra", code="H", skills=tuple(skills))
+    module = SchemaTestModule(id=2, name="Math", domains=(domain,))
     monkeypatch.setattr(
         main.httpx,
         "post",
@@ -295,7 +295,7 @@ def test_question_manager_accepts_list_backed_domain_skills(monkeypatch):
     client = main.QBankAssessmentClient(
         assessment,
         module,
-        [domain],
+        (domain,),
         tz=dt.timezone.utc,
     )
 

@@ -203,7 +203,7 @@ def build_schema_objects():
         code="H",
         skills=(skill_a, skill_b),
     )
-    module = SchemaTestModule(id=2, name="Math", domains=[domain])
+    module = SchemaTestModule(id=2, name="Math", domains=(domain,))
     return assessment, domain, module, skill_a, skill_b
 
 

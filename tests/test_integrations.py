@@ -108,7 +108,7 @@ def test_live_assessment_client_can_list_and_fetch_math_question():
     client = main.QBankAssessmentClient(
         assessment,
         module,
-        [domain],
+        (domain,),
         tz=dt.timezone.utc,
     )
     manager = client.QuestionManager()
@@ -134,7 +134,7 @@ def test_live_pdf_generation_contract_for_small_question_set():
     client = main.QBankAssessmentClient(
         assessment,
         module,
-        [domain],
+        (domain,),
         tz=dt.timezone.utc,
     )
     manager = client.QuestionManager()

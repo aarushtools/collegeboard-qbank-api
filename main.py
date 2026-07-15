@@ -110,21 +110,23 @@ class QBankMetadataClient:
         module_list = []
         for module in self._raw["lookupData"]["test"]:
             module_lookup_name = self.MODULE_SHORTHAND_LOOKUP_TABLE[module["text"]]
-            mdl_domains = [
+            mdl_domains = tuple(
                 Domain(
                     id=int(domain["id"]),
                     name=domain["text"],
                     code=domain["primaryClassCd"],
-                    skills=[
+                    skills=tuple(
                         Skill(id=int(skill["id"]), name=skill["text"])
                         for skill in domain["skill"]
-                    ],
+                    ),
                 )
                 for domain in self._raw["lookupData"]["domain"][module_lookup_name]
-            ]
+            )
 
             module_list.append(
-                TestModule(id=int(module["id"]), name=module["text"], domains=mdl_domains)
+                TestModule(
+                    id=int(module["id"]), name=module["text"], domains=mdl_domains
+                )
             )
 
         return module_list
@@ -150,7 +152,7 @@ class QBankAssessmentClient:
         self,
         assessment: Assessment,
         module: TestModule,
-        domains: list[Domain],
+        domains: tuple[Domain, ...],
         *,
         tz: ZoneInfo | None,
         question_url: str = DEFAULT_QUESTION_URL,
@@ -210,9 +212,7 @@ class QBankAssessmentClient:
             self.questions = []
             DOMAIN_LOOKUP_TABLE = {d_obj.name: d_obj for d_obj in client.domains}
             SKILL_LOOKUP_TABLE = {
-                skill.name: skill
-                for d_obj in client.domains
-                for skill in d_obj.skills
+                skill.name: skill for d_obj in client.domains for skill in d_obj.skills
             }
 
             for q in client._raw:
@@ -279,8 +279,8 @@ class QBankAssessmentClient:
                 stimulus=raw.get("stimulus"),
                 rationale=raw["rationale"],
                 question_summary=question_summary,
-                answers=answer_list.values(),
-                correct_answers=correct_answers,
+                answers=tuple(answer_list.values()),
+                correct_answers=tuple(correct_answers),
             )
 
         def fetch(

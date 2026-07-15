@@ -1,9 +1,8 @@
-from collections.abc import Iterable
-from dataclasses import dataclass, field
 import datetime
+import uuid
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal, Optional
-import uuid
 
 
 class QBankValidationError(ValueError):
@@ -12,10 +11,6 @@ class QBankValidationError(ValueError):
 
 class QBankMultipleSkills(ValueError):
     """Returned if multiple skills arised from a simple QBank search"""
-
-
-def _tupleify(items: Iterable):
-    return tuple(items)
 
 
 @dataclass(frozen=True)
@@ -28,10 +23,7 @@ class Assessment:
 class TestModule:
     id: int
     name: str
-    domains: list[Domain]
-
-    def __post_init__(self):
-        object.__setattr__(self, "domains", _tupleify(self.domains))
+    domains: tuple["Domain", ...]
 
 
 @dataclass(frozen=True)
@@ -45,10 +37,7 @@ class Domain:
     id: int
     name: str
     code: str
-    skills: list[Skill]
-
-    def __post_init__(self):
-        object.__setattr__(self, "skills", _tupleify(self.skills))
+    skills: tuple[Skill, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,18 +61,15 @@ class DetailedQuestion:
     type: Literal["mcq", "spr"]
     rationale: str
     question_summary: QuestionSummary
-    answers: list[Answer]
-    correct_answers: list[Answer]
-
-    def __post_init__(self):
-        object.__setattr__(self, "answers", _tupleify(self.answers))
-        object.__setattr__(self, "correct_answers", _tupleify(self.correct_answers))
+    answers: tuple["Answer", ...]
+    correct_answers: tuple["Answer", ...]
 
 
 @dataclass(frozen=True)
 class Answer:
     id: uuid.UUID | None
     content: str
+
 
 @dataclass(frozen=True)
 class QBankDownloadProgress:
