@@ -8,9 +8,7 @@ import pytest
 import main
 
 
-LOOKUP_URL = (
-    "https://qbank-api.collegeboard.org/msreportingquestionbank-prod/questionbank/lookup"
-)
+LOOKUP_URL = "https://qbank-api.collegeboard.org/msreportingquestionbank-prod/questionbank/lookup"
 QUESTION_URL = "https://qbank-api.collegeboard.org/msreportingquestionbank-prod/questionbank/digital/get-question"
 
 pytestmark = pytest.mark.integration
@@ -30,12 +28,16 @@ def _post_live_question(external_id: uuid.UUID) -> dict:
     return response.json()
 
 
-def _find_live_question_of_type(external_ids: set[uuid.UUID], expected_type: str) -> tuple[uuid.UUID, dict]:
+def _find_live_question_of_type(
+    external_ids: set[uuid.UUID], expected_type: str
+) -> tuple[uuid.UUID, dict]:
     for external_id in external_ids:
         payload = _post_live_question(external_id)
         if payload["type"] == expected_type:
             return external_id, payload
-    raise AssertionError(f"Could not find a live {expected_type!r} question in the provided ids")
+    raise AssertionError(
+        f"Could not find a live {expected_type!r} question in the provided ids"
+    )
 
 
 async def _await_completed_pdf_url(
@@ -62,7 +64,9 @@ async def _await_completed_pdf_url(
         async with asyncio.timeout(timeout_seconds):
             return await run()
     except TimeoutError as exc:
-        raise AssertionError("Timed out waiting for PDF generation to complete") from exc
+        raise AssertionError(
+            "Timed out waiting for PDF generation to complete"
+        ) from exc
 
 
 def test_live_lookup_metadata_contract():
@@ -77,7 +81,9 @@ def test_live_lookup_metadata_contract():
 
 def test_live_get_question_contract_for_reading_mcq():
     metadata = main.QBankMetadataClient(lookup_url=LOOKUP_URL)
-    external_id, payload = _find_live_question_of_type(metadata.reading_live_items, "mcq")
+    external_id, payload = _find_live_question_of_type(
+        metadata.reading_live_items, "mcq"
+    )
 
     assert payload["externalid"] == str(external_id)
     assert payload["type"] == "mcq"
@@ -112,7 +118,9 @@ def test_live_assessment_client_can_list_and_fetch_math_question():
         tz=dt.timezone.utc,
     )
     manager = client.QuestionManager()
-    available_questions = [question for question in manager.all() if question.external_id]
+    available_questions = [
+        question for question in manager.all() if question.external_id
+    ]
 
     assert client.question_count() > 0
     assert len(available_questions) > 0

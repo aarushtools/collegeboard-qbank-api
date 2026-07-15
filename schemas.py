@@ -2,7 +2,7 @@ import datetime
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Literal, Optional
+from typing import Literal
 
 
 class QBankValidationError(ValueError):
@@ -45,7 +45,7 @@ class QuestionSummary:
     assessment: Assessment
     domain: Domain
     skill: Skill
-    external_id: Optional[uuid.UUID]
+    external_id: uuid.UUID
     uuid: uuid.UUID
     question_id: str
     difficulty: Literal["E", "M", "H"]

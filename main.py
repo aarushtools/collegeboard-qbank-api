@@ -82,7 +82,7 @@ class QBankRateLimitedError(QBankAPIFailure):
         self.response = response
         try:
             self.retry_after = int(retry_after) if retry_after is not None else 60
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             self.retry_after = 60
 
 
@@ -243,16 +243,17 @@ class QBankAssessmentClient:
             }
 
             for q in client._raw:
+                external_id_raw = q.get("external_id")
+                if external_id_raw is None:
+                    # Some question types have no external_id (but do have an IBN); skip them so
+                    # downstream code can always assume `external_id` exists.
+                    continue
                 self.questions.append(
                     QuestionSummary(
                         assessment=client.assessment,
                         domain=DOMAIN_LOOKUP_TABLE[q["primary_class_cd_desc"]],
                         skill=SKILL_LOOKUP_TABLE[q["skill_desc"]],
-                        external_id=(
-                            uuid.UUID(q["external_id"])
-                            if q["external_id"] is not None
-                            else None
-                        ),
+                        external_id=uuid.UUID(external_id_raw),
                         uuid=uuid.UUID(q["uId"]),
                         question_id=q["questionId"],
                         difficulty=q["difficulty"],
@@ -272,7 +273,7 @@ class QBankAssessmentClient:
             return _QuestionCollection(self.questions)
 
         @staticmethod
-        def _get_external_id(q: QuestionSummary | uuid.UUID) -> uuid.UUID | None:
+        def _get_external_id(q: QuestionSummary | uuid.UUID) -> uuid.UUID:
             if isinstance(q, QuestionSummary):
                 external_id = q.external_id
             elif isinstance(q, uuid.UUID):
@@ -283,6 +284,30 @@ class QBankAssessmentClient:
                 )
 
             return external_id
+
+        @classmethod
+        def _http_status_error_to_qbank(
+            cls, exc: httpx.HTTPStatusError
+        ) -> QBankHTTPStatusError | QBankRateLimitedError:
+            try:
+                error_detail = exc.response.json().get(
+                    "message"
+                ) or exc.response.json().get("detail")
+            except ValueError, AttributeError:
+                error_detail = exc.response.text or "No error text provided"
+            msg = f"QBank API Server Error [{exc.response.status_code}]: {error_detail}"
+            if exc.response.status_code == 429:
+                return QBankRateLimitedError(
+                    msg,
+                    request=exc.request,
+                    response=exc.response,
+                    retry_after=exc.response.headers.get("Retry-After"),
+                )
+            return QBankHTTPStatusError(
+                msg,
+                request=exc.request,
+                response=exc.response,
+            )
 
         @staticmethod
         def _process_answer_json(
@@ -328,50 +353,20 @@ class QBankAssessmentClient:
             else:
                 question_summary = question
 
+            client: Any = _client or httpx
             retries = 0
             while True:
                 try:
                     try:
-                        if _client is None:
-                            response = httpx.post(
-                                self.client.fetch_url,
-                                json={"external_id": str(external_id) if external_id is not None else None},
-                                timeout=2.0,
-                            )
-                        else:
-                            response = _client.post(
-                                self.client.fetch_url,
-                                json={
-                                    "external_id": (
-                                        str(external_id)
-                                        if external_id is not None
-                                        else None
-                                    ),
-                                },
-                                timeout=2.0,
-                            )
+                        response = client.post(
+                            self.client.fetch_url,
+                            json={"external_id": str(external_id)},
+                            timeout=2.0,
+                        )
                         response.raise_for_status()
                         raw: Any = response.json()
                     except httpx.HTTPStatusError as exc:
-                        try:
-                            error_detail = exc.response.json().get(
-                                "message"
-                            ) or exc.response.json().get("detail")
-                        except ValueError, AttributeError:
-                            error_detail = exc.response.text or "No error text provided"
-                        msg = f"QBank API Server Error [{exc.response.status_code}]: {error_detail}"
-                        if exc.response.status_code == 429:
-                            raise QBankRateLimitedError(
-                                msg,
-                                request=exc.request,
-                                response=exc.response,
-                                retry_after=exc.response.headers.get("Retry-After"),
-                            ) from exc
-                        raise QBankHTTPStatusError(
-                            msg,
-                            request=exc.request,
-                            response=exc.response,
-                        ) from exc
+                        raise self._http_status_error_to_qbank(exc) from exc
                     except httpx.HTTPError as exc:
                         raise QBankAPIFailure(
                             f"QBank Network/Transport Error: {exc}",
@@ -381,7 +376,6 @@ class QBankAssessmentClient:
                         raise QBankAPIFailure(
                             f"Unexpected system error occurred: {exc}"
                         ) from exc
-
                     return self._process_answer_json(raw, question_summary)
 
                 except QBankRateLimitedError as ex:
@@ -433,37 +427,13 @@ class QBankAssessmentClient:
                     try:
                         response = await client.post(
                             self.client.fetch_url,
-                            json={
-                                "external_id": (
-                                    str(external_id)
-                                    if external_id is not None
-                                    else None
-                                ),
-                            },
+                            json={"external_id": str(external_id)},
                             timeout=2.0,
                         )
                         response.raise_for_status()
                         raw: Any = response.json()
                     except httpx.HTTPStatusError as exc:
-                        try:
-                            error_detail = exc.response.json().get(
-                                "message"
-                            ) or exc.response.json().get("detail")
-                        except ValueError, AttributeError:
-                            error_detail = exc.response.text or "No error text provided"
-                        msg = f"QBank API Server Error [{exc.response.status_code}]: {error_detail}"
-                        if exc.response.status_code == 429:
-                            raise QBankRateLimitedError(
-                                msg,
-                                request=exc.request,
-                                response=exc.response,
-                                retry_after=exc.response.headers.get("Retry-After"),
-                            ) from exc
-                        raise QBankHTTPStatusError(
-                            msg,
-                            request=exc.request,
-                            response=exc.response,
-                        ) from exc
+                        raise self._http_status_error_to_qbank(exc) from exc
                     except httpx.HTTPError as exc:
                         raise QBankAPIFailure(
                             f"QBank Network/Transport Error: {exc}",
@@ -473,7 +443,6 @@ class QBankAssessmentClient:
                         raise QBankAPIFailure(
                             f"Unexpected system error occurred: {exc}"
                         ) from exc
-
                     return self._process_answer_json(raw, question_summary)
 
                 except QBankRateLimitedError as ex:

@@ -122,7 +122,9 @@ def test_metadata_client_wraps_unexpected_errors(monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    with pytest.raises(main.QBankAPIFailure, match="Unexpected system error occurred: boom"):
+    with pytest.raises(
+        main.QBankAPIFailure, match="Unexpected system error occurred: boom"
+    ):
         main.QBankMetadataClient()
 
 
@@ -208,7 +210,9 @@ def test_assessment_client_wraps_unexpected_errors(monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    with pytest.raises(main.QBankAPIFailure, match="Unexpected system error occurred: boom"):
+    with pytest.raises(
+        main.QBankAPIFailure, match="Unexpected system error occurred: boom"
+    ):
         main.QBankAssessmentClient(
             assessment,
             module,
@@ -226,7 +230,9 @@ def test_question_manager_helpers_cover_external_ids_and_answer_processing():
         == summary.external_id
     )
     assert (
-        main.QBankAssessmentClient._QuestionManager._get_external_id(summary.external_id)
+        main.QBankAssessmentClient._QuestionManager._get_external_id(
+            summary.external_id
+        )
         == summary.external_id
     )
 
@@ -302,10 +308,13 @@ def test_question_manager_accepts_list_backed_domain_skills(monkeypatch):
     manager = client.QuestionManager()
 
     assert len(manager.all()) == 2
-    assert {question.question_id for question in manager.all()} == {"ac472881", "3d1070c9"}
+    assert {question.question_id for question in manager.all()} == {
+        "ac472881",
+        "3d1070c9",
+    }
 
 
-def test_question_manager_preserves_null_external_ids(monkeypatch):
+def test_question_manager_skips_null_external_ids(monkeypatch):
     assessment, domain, module, *_ = build_schema_objects()
     monkeypatch.setattr(
         main.httpx,
@@ -324,9 +333,11 @@ def test_question_manager_preserves_null_external_ids(monkeypatch):
         tz=dt.timezone.utc,
     )
 
-    questions = client.QuestionManager().all().to_list()
+    manager = client.QuestionManager()
+    questions = manager.all().to_list()
 
-    assert any(question.external_id is None for question in questions)
+    assert len(questions) == 2
+    assert {q.question_id for q in questions} == {"ac472881", "3d1070c9"}
 
 
 def test_fetch_returns_detailed_question_for_uuid_lookup():
@@ -409,7 +420,9 @@ def test_fetch_raises_http_status_error_with_text_fallback():
     assessment, domain, _, skill_a, _ = build_schema_objects()
     summary = build_question_summary(skill_a, domain, assessment)
     manager = build_manager_with_summary(summary)
-    client = SyncSequenceClient([make_response(500, text="question fetch failed", method="POST")])
+    client = SyncSequenceClient(
+        [make_response(500, text="question fetch failed", method="POST")]
+    )
 
     with pytest.raises(main.QBankHTTPStatusError, match="question fetch failed"):
         manager.fetch(summary, client, max_retries=0)
@@ -464,7 +477,9 @@ def test_fetch_wraps_unexpected_errors_after_retries():
 
     client = SyncSequenceClient([BadResponse()])
 
-    with pytest.raises(main.QBankAPIFailure, match="Unexpected system error occurred: bad payload"):
+    with pytest.raises(
+        main.QBankAPIFailure, match="Unexpected system error occurred: bad payload"
+    ):
         manager.fetch(summary, client, max_retries=0)
 
 
@@ -480,10 +495,8 @@ def test_fetchmany_collects_items(monkeypatch):
     expected_b = build_detailed_question(summary_b)
 
     manager = object.__new__(main.QBankAssessmentClient._QuestionManager)
-    manager.fetch = (
-        lambda question, _client, max_retries=3: expected_a
-        if question == summary_a
-        else expected_b
+    manager.fetch = lambda question, _client, max_retries=3: (
+        expected_a if question == summary_a else expected_b
     )
 
     class DummyClient:
@@ -552,7 +565,9 @@ def test_afetch_raises_http_status_error_with_text_fallback():
     assessment, domain, _, skill_a, _ = build_schema_objects()
     summary = build_question_summary(skill_a, domain, assessment)
     manager = build_manager_with_summary(summary)
-    client = AsyncSequenceClient([make_response(500, text="async question failed", method="POST")])
+    client = AsyncSequenceClient(
+        [make_response(500, text="async question failed", method="POST")]
+    )
 
     with pytest.raises(main.QBankHTTPStatusError, match="async question failed"):
         asyncio.run(manager.afetch(summary, client, max_retries=0))
@@ -572,7 +587,10 @@ def test_afetch_wraps_unexpected_errors_after_retries():
 
     client = AsyncSequenceClient([BadResponse()])
 
-    with pytest.raises(main.QBankAPIFailure, match="Unexpected system error occurred: async bad payload"):
+    with pytest.raises(
+        main.QBankAPIFailure,
+        match="Unexpected system error occurred: async bad payload",
+    ):
         asyncio.run(manager.afetch(summary, client, max_retries=0))
 
 
@@ -708,7 +726,9 @@ def test_create_pdf_url_in_progress_yields_progress(monkeypatch):
             "estimatedTimeRemainingMs": 1500,
         },
     }
-    patch_async_client(monkeypatch, [make_response(200, json_data=payload, method="POST")])
+    patch_async_client(
+        monkeypatch, [make_response(200, json_data=payload, method="POST")]
+    )
     progress = asyncio.run(
         first_from_asyncgen(
             manager.create_pdf_url(
@@ -732,7 +752,9 @@ def test_create_pdf_url_unknown_status_yields_raw_payload(monkeypatch):
     detailed = build_detailed_question(summary)
     payload = {"status": "QUEUED", "jobId": "abc123"}
 
-    patch_async_client(monkeypatch, [make_response(200, json_data=payload, method="POST")])
+    patch_async_client(
+        monkeypatch, [make_response(200, json_data=payload, method="POST")]
+    )
     assert (
         asyncio.run(
             first_from_asyncgen(
@@ -860,7 +882,9 @@ def test_create_pdf_url_wraps_transport_errors(monkeypatch):
         [httpx.ConnectError("pdf offline", request=request)],
     )
 
-    with pytest.raises(main.QBankAPIFailure, match="QBank Network/Transport Error: pdf offline"):
+    with pytest.raises(
+        main.QBankAPIFailure, match="QBank Network/Transport Error: pdf offline"
+    ):
         asyncio.run(
             first_from_asyncgen(
                 manager.create_pdf_url([summary], QBankPDFStyle.NO_ANSWER_OR_EXPL)
@@ -882,7 +906,9 @@ def test_create_pdf_url_wraps_unexpected_errors(monkeypatch):
 
     patch_async_client(monkeypatch, [BadResponse()])
 
-    with pytest.raises(main.QBankAPIFailure, match="Unexpected system error occurred: pdf bad payload"):
+    with pytest.raises(
+        main.QBankAPIFailure, match="Unexpected system error occurred: pdf bad payload"
+    ):
         asyncio.run(
             first_from_asyncgen(
                 manager.create_pdf_url([summary], QBankPDFStyle.NO_ANSWER_OR_EXPL)
@@ -900,7 +926,9 @@ def test_create_pdf_url_raises_http_status_error_for_non_429(monkeypatch):
         [make_response(500, json_data={"detail": "server error"}, method="POST")],
     )
 
-    with pytest.raises(main.QBankHTTPStatusError, match="QBank API Server Error \\[500\\]"):
+    with pytest.raises(
+        main.QBankHTTPStatusError, match="QBank API Server Error \\[500\\]"
+    ):
         asyncio.run(
             first_from_asyncgen(
                 manager.create_pdf_url([summary], QBankPDFStyle.NO_ANSWER_OR_EXPL)

@@ -16,7 +16,9 @@ from schemas import (
 )
 
 
-def make_request(method: str = "GET", url: str = "https://example.test/api") -> httpx.Request:
+def make_request(
+    method: str = "GET", url: str = "https://example.test/api"
+) -> httpx.Request:
     return httpx.Request(method, url)
 
 
