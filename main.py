@@ -51,7 +51,7 @@ class QBankAPIFailure(httpx.HTTPError):
         self._request = request
 
     @property
-    def request(self) -> httpx.Request | None:  # type: ignore[override]
+    def request(self) -> httpx.Request | None:
         return self._request
 
 
