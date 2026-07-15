@@ -57,7 +57,7 @@ class QuestionSummary:
 @dataclass(frozen=True, slots=True)
 class DetailedQuestion:
     stem: str
-    stimulus: str
+    stimulus: str | None
     type: Literal["mcq", "spr"]
     rationale: str
     question_summary: QuestionSummary
@@ -67,7 +67,7 @@ class DetailedQuestion:
 
 @dataclass(frozen=True)
 class Answer:
-    id: uuid.UUID | None
+    id: str | uuid.UUID | None
     content: str
 
 
@@ -86,6 +86,6 @@ class QBankLiveDownloadResults(QBankDownloadProgress):
 
 
 class QBankPDFStyle(StrEnum):
-    ANSWERS_AND_EXPLANATIONS: str = "with-ans-and-expl"
-    NO_ANSWER_NO_HEADER: str = "no-ans-no-hdr"
-    NO_ANSWER_OR_EXPL: str = "no-ans-no-expl"
+    ANSWERS_AND_EXPLANATIONS = "with-ans-and-expl"
+    NO_ANSWER_NO_HEADER = "no-ans-no-hdr"
+    NO_ANSWER_OR_EXPL = "no-ans-no-expl"

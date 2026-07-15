@@ -1,8 +1,16 @@
 import asyncio
+import builtins
 import time
 import uuid
 from datetime import date, datetime, timedelta
-from typing import AsyncGenerator, Iterable, Literal
+from typing import (
+    Any,
+    AsyncGenerator,
+    Iterable,
+    Literal,
+    NotRequired,
+    TypedDict,
+)
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -21,12 +29,30 @@ from schemas import (
 )
 
 
+class AnswerOption(TypedDict):
+    id: str
+    content: str
+
+
+class AnswerPayloadBase(TypedDict):
+    type: Literal["mcq", "spr"]
+    stem: str
+    rationale: str
+    stimulus: NotRequired[str | None]
+    answerOptions: NotRequired[list[AnswerOption] | None]
+    keys: list[str]
+
+
 class QBankAPIFailure(httpx.HTTPError):
     """All QBank API errors subclass from this class."""
 
     def __init__(self, message: str, request: httpx.Request | None = None):
         super().__init__(message)
-        self.request = request
+        self._request = request
+
+    @property
+    def request(self) -> httpx.Request | None:  # type: ignore[override]
+        return self._request
 
 
 class QBankHTTPStatusError(QBankAPIFailure):
@@ -50,13 +76,14 @@ class QBankRateLimitedError(QBankAPIFailure):
         message: str,
         request: httpx.Request | None,
         response: httpx.Response,
-        retry_after: int,
+        retry_after: str | int | None,
     ):
         super().__init__(message, request)
         self.response = response
-        self.retry_after = (
-            int(retry_after) if retry_after and retry_after.isdigit() else 60
-        )
+        try:
+            self.retry_after = int(retry_after) if retry_after is not None else 60
+        except (TypeError, ValueError):
+            self.retry_after = 60
 
 
 class QBankQuestionCollectionInvalidType(TypeError):
@@ -245,10 +272,10 @@ class QBankAssessmentClient:
             return _QuestionCollection(self.questions)
 
         @staticmethod
-        def _get_external_id(q: QuestionSummary | uuid.UUID) -> uuid.UUID:
-            if type(q) is QuestionSummary:
+        def _get_external_id(q: QuestionSummary | uuid.UUID) -> uuid.UUID | None:
+            if isinstance(q, QuestionSummary):
                 external_id = q.external_id
-            elif type(q) is uuid.UUID:
+            elif isinstance(q, uuid.UUID):
                 external_id = q
             else:
                 raise QBankQuestionCollectionInvalidType(
@@ -259,8 +286,9 @@ class QBankAssessmentClient:
 
         @staticmethod
         def _process_answer_json(
-            raw: dict[str, dict[str, str] | str], question_summary: QuestionSummary
-        ):
+            raw: "AnswerPayloadBase",
+            question_summary: QuestionSummary,
+        ) -> DetailedQuestion:
             answer_options = raw.get("answerOptions") or []
             answer_list = {
                 answer["id"]: Answer(id=answer["id"], content=answer["content"])
@@ -286,37 +314,44 @@ class QBankAssessmentClient:
         def fetch(
             self,
             question: QuestionSummary | uuid.UUID,
-            _client: httpx.Client = None,
+            _client: httpx.Client | None = None,
             *,
             max_retries: int = 3,
         ) -> DetailedQuestion:
             external_id = self._get_external_id(question)
-            question_summary = (
-                self.all().get_by_external_id(question)
-                if type(question) is uuid.UUID
-                else question
-            )
-
-            if not _client:
-                _client = httpx
+            if isinstance(question, uuid.UUID):
+                question_summary = self.all().get_by_external_id(question)
+                if not isinstance(question_summary, QuestionSummary):
+                    raise QBankAPIFailure(
+                        f"Unexpected item in collection for external_id={question!r}"
+                    )
+            else:
+                question_summary = question
 
             retries = 0
             while True:
                 try:
                     try:
-                        response = _client.post(
-                            self.client.fetch_url,
-                            json={
-                                "external_id": (
-                                    str(external_id)
-                                    if external_id is not None
-                                    else None
-                                ),
-                            },
-                            timeout=2.0,
-                        )
+                        if _client is None:
+                            response = httpx.post(
+                                self.client.fetch_url,
+                                json={"external_id": str(external_id) if external_id is not None else None},
+                                timeout=2.0,
+                            )
+                        else:
+                            response = _client.post(
+                                self.client.fetch_url,
+                                json={
+                                    "external_id": (
+                                        str(external_id)
+                                        if external_id is not None
+                                        else None
+                                    ),
+                                },
+                                timeout=2.0,
+                            )
                         response.raise_for_status()
-                        raw = response.json()
+                        raw: Any = response.json()
                     except httpx.HTTPStatusError as exc:
                         try:
                             error_detail = exc.response.json().get(
@@ -387,6 +422,10 @@ class QBankAssessmentClient:
                 if type(question) is uuid.UUID
                 else question
             )
+            if not isinstance(question_summary, QuestionSummary):
+                raise QBankAPIFailure(
+                    f"Unexpected item in collection for external_id={question!r}"
+                )
 
             retries = 0
             while True:
@@ -404,7 +443,7 @@ class QBankAssessmentClient:
                             timeout=2.0,
                         )
                         response.raise_for_status()
-                        raw = response.json()
+                        raw: Any = response.json()
                     except httpx.HTTPStatusError as exc:
                         try:
                             error_detail = exc.response.json().get(
@@ -472,13 +511,15 @@ class QBankAssessmentClient:
 
             return _QuestionCollection(questions)
 
-        async def create_pdf_url[T: QBankDownloadProgress](
+        PDFYield = QBankDownloadProgress | QBankLiveDownloadResults | dict[str, Any]
+
+        async def create_pdf_url(
             self,
             question_list: Iterable[QuestionSummary | DetailedQuestion],
             style: QBankPDFStyle,
             *,
             request_speed_interval: float = 1.0,
-        ) -> AsyncGenerator[T, None]:
+        ) -> AsyncGenerator[PDFYield, None]:
             question_ids = []
             for q in question_list:
                 if isinstance(q, DetailedQuestion):
@@ -508,7 +549,7 @@ class QBankAssessmentClient:
                                 timeout=2.0,
                             )
                             response.raise_for_status()
-                            raw = response.json()
+                            raw: Any = response.json()
                         except httpx.HTTPStatusError as exc:
                             try:
                                 error_detail = exc.response.json().get(
@@ -697,11 +738,11 @@ class _QuestionCollection:
 
         return _QuestionCollection(qs)
 
-    def to_list(self) -> list[QuestionSummary]:
+    def to_list(self) -> list[QuestionSummary | DetailedQuestion]:
         return list(self._questions)
 
     @property
-    def frozenset(self) -> frozenset[QuestionSummary]:
+    def frozenset(self) -> builtins.frozenset[QuestionSummary | DetailedQuestion]:
         return self._questions
 
     def _sum_obj(self, q: QuestionSummary | DetailedQuestion):

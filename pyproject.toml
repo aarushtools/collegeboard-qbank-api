@@ -27,3 +27,6 @@ norecursedirs = [
 markers = [
     "integration: live CollegeBoard API integration tests (excluded by default; run with `-m integration`)",
 ]
+
+[tool.ty.src]
+exclude = ["tests/"]
